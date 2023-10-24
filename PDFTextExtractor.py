@@ -29,7 +29,21 @@ class PDFTextExtractor:
                 lines_cleaned.append(line)
             pages.append(lines_cleaned)
         return pages
-
+    
+    def get_lines_from_pdf(
+            self,
+            pdf_file: str,
+            page_ix: int,
+            start_ix: int,
+            num_lines: int = 6
+            ) -> list:
+        pdf_pages = self.catalogue_pdf(pdf_file)
+        lines = []
+        page = pdf_pages[page_ix]
+        end_ix = min(start_ix + num_lines, len(page))
+        for ix in range(start_ix, end_ix):
+            lines.append(page[ix])
+        return lines
 
 if __name__ == '__main__':
     pdf_text_extractor = PDFTextExtractor()

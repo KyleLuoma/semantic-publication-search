@@ -4,6 +4,8 @@ import pandas as pd
 import json
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+import os
+import pypdf.errors
 
 
 
@@ -13,10 +15,41 @@ def main():
     # sps.embed_and_upload("./pubs/da_pam/ARN30948-PAM_670-1-000-WEB-1.pdf")
 
     print("Searching")
-    results = sps.search("commander directed")
+    results = sps.search(
+        "physical fitness test",
+        limit=5
+        )
     for result in results:
-        print(result)
+        print("\n\n", result)
+        lines = sps.pte.get_lines_from_pdf(
+            f"./pubs/ar/{result['pub_filename']}",
+            result['page'],
+            result['sentence_index']
+            )
+        for l in lines:
+            print(l)
 
+
+def batch_upload():
+    sps = SemanticPubSearcher()
+    folder_path = "./pubs/ar"
+    already_uploaded = os.listdir("./excel_exports")
+    for filename in os.listdir(folder_path):
+        if filename.endswith(".pdf") and filename.replace(".pdf", ".xlsx") not in already_uploaded:
+            completion_log = open("completion_log.txt", "a")
+            print("Uploading " + filename)
+            file_path = os.path.join(folder_path, filename).replace("\\", "/")
+            try:
+                sps.embed_and_upload(file_path, save_as_excel=True)
+                completion_log.write(filename + "\n")
+            except pypdf.errors.PdfStreamError as e:
+                print("Error: " + str(e))
+                # move file to error folder
+                completion_log.write(filename + " - ERROR\n")
+                os.rename(file_path, file_path.replace("ar", "ar/need_repair"))
+
+            
+            completion_log.close()
 
 
 class SemanticPubSearcher:
@@ -27,7 +60,11 @@ class SemanticPubSearcher:
         self.model.to('cuda')
         self.weviate_connector = WeaviateConnector.WeaviateConnector()
 
-    def embed_and_upload(self, filepath: str) -> None:
+    def embed_and_upload(
+            self, 
+            filepath: str,
+            save_as_excel: bool = False
+            ) -> None:
         """
         Embeds each sentence in a PDF file and uploads the embeddings to Weaviate.
 
@@ -35,16 +72,24 @@ class SemanticPubSearcher:
             filepath: The path to the PDF file.
         """
         embedding_dict = self.get_embeddings_from_pdf(filepath)
+        if save_as_excel:
+            filename = filepath.split("/")[-1].replace(".pdf", ".xlsx")
+            df = pd.DataFrame(embedding_dict)
+            df.to_excel(f"./excel_exports/{filename}")
         self.upload_embeddings(embedding_dict)
 
-    def search(self, query: str) -> list:
+    def search(
+            self, 
+            query: str,
+            limit: int = 15
+            ) -> list:
         embedding = self.model.encode(query)
         near_vector = {"vector": embedding}
         search_results = self.weviate_connector.client.query.get(
             "Sentence", ["sentence", "page", "sentence_index", "pub_filename"]
         ).with_near_vector(
             near_vector
-        ).with_limit(15).do()
+        ).with_limit(limit).do()
         json_result = json.dumps(search_results)
         result = json.loads(json_result)
         return result['data']['Get']['Sentence']
@@ -63,7 +108,6 @@ class SemanticPubSearcher:
         """
 
         df = pd.DataFrame(embedding_dict)
-        df.to_excel("sentences.xlsx")
 
         print("Uploading embeddings to Weaviate...")
         with self.weviate_connector.client.batch as batch:
@@ -129,3 +173,4 @@ class SemanticPubSearcher:
 
 if __name__ == '__main__':
     main()
+    # batch_upload()
