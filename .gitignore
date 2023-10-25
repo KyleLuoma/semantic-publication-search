@@ -3,6 +3,7 @@
 /pubs/
 /__pycache__/
 
+*.sqlite
 *.csv
 *.xlsx
 completion_log.txt
